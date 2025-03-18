@@ -1,0 +1,41 @@
+name: Basic Commit Message Checker
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  check_commit_messages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Check commit messages
+        run: |
+          echo "Checking commit messages..."
+          COMMIT_MESSAGES=$(git log --format=%B -n 5)
+          
+          for msg in "$COMMIT_MESSAGES"; do
+            if [[ ${#msg} -lt 10 ]]; then
+              echo "❌ Commit message too short: $msg"
+              exit 1
+            fi
+            if ! [[ $msg =~ ^[A-Z] ]]; then
+              echo "❌ Commit message must start with a capital letter: $msg"
+              exit 1
+            fi
+            if [[ $msg =~ (fixup!|WIP) ]]; then
+              echo "❌ Commit message contains 'fixup!' or 'WIP' which are not allowed."
+              exit 1
+            fi
+          done
+
+          echo "✅ All commit messages passed the validation."
