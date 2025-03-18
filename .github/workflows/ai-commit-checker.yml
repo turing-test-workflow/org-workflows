@@ -1,7 +1,10 @@
-name: Basic Commit Message Checker
+name: AI-Powered Commit Message Checker
 
 on:
   workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
 
 jobs:
   check_commit_messages:
@@ -11,9 +14,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Check commit messages
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
         run: |
-          echo "Checking commit messages..."
+          python -m pip install --upgrade pip
+          pip install anthropic
+
+      - name: Basic commit checks
+        run: |
+          echo "Running basic commit checks..."
           COMMIT_MESSAGES=$(git log --format=%B -n 5)
           
           for msg in "$COMMIT_MESSAGES"; do
@@ -31,4 +44,56 @@ jobs:
             fi
           done
 
-          echo "✅ All commit messages passed the validation."
+      - name: AI Commit Message Analysis
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cat > check_commits.py << 'EOF'
+          import os
+          import subprocess
+          import sys
+          from anthropic import Anthropic
+
+          def get_recent_commits(n=5):
+              result = subprocess.run(['git', 'log', '--format=%B', f'-n{n}'], 
+                                   capture_output=True, text=True)
+              return result.stdout.strip().split('\n\n')
+
+          def analyze_commit_message(client, message):
+              prompt = f"""Analyze this git commit message for quality and conventions:
+              "{message}"
+              
+              Check for:
+              1. Clarity and descriptiveness
+              2. Proper format (conventional commits preferred)
+              3. Grammar and spelling
+              
+              Return only PASS or FAIL with a brief reason."""
+
+              response = client.messages.create(
+                  model="claude-3-sonnet-20240229",
+                  max_tokens=150,
+                  messages=[{"role": "user", "content": prompt}]
+              )
+              return response.content
+
+          def main():
+              anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+              commits = get_recent_commits()
+              
+              for commit in commits:
+                  if not commit.strip():
+                      continue
+                  
+                  result = analyze_commit_message(anthropic, commit)
+                  print(f"\nAnalyzing commit: {commit}")
+                  print(f"AI Analysis: {result}")
+                  
+                  if "FAIL" in result:
+                      sys.exit(1)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+          python check_commits.py
