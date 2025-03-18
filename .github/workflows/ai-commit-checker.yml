@@ -55,11 +55,17 @@ jobs:
           from anthropic import Anthropic
 
           def get_recent_commits(n=5):
-              result = subprocess.run(['git', 'log', '--format=%B', f'-n{n}'], 
+              result = subprocess.run(['git', 'log', '--format=%H %B', f'-n{n}'], 
                                    capture_output=True, text=True)
-              return result.stdout.strip().split('\n\n')
+              commits = []
+              for line in result.stdout.strip().split('\n\n'):
+                  if line.strip():
+                      hash_msg = line.split(' ', 1)
+                      if len(hash_msg) == 2:
+                          commits.append((hash_msg[0][:7], hash_msg[1].strip()))
+              return commits
 
-          def analyze_commit_message(client, message):
+          def analyze_commit_message(client, commit_hash, message):
               prompt = f"""Analyze this git commit message for quality and conventions:
               "{message}"
               
@@ -77,20 +83,36 @@ jobs:
               )
               return response.content
 
+          def print_separator():
+              print("\n" + "="*50 + "\n")
+
           def main():
+              print("🔍 Starting AI Commit Message Analysis...")
+              print_separator()
+              
               anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
               commits = get_recent_commits()
+              has_failures = False
               
-              for commit in commits:
-                  if not commit.strip():
-                      continue
+              for commit_hash, message in commits:
+                  print(f"📝 Analyzing commit: [{commit_hash}]")
+                  print(f"Message: {message}")
                   
-                  result = analyze_commit_message(anthropic, commit)
-                  print(f"\nAnalyzing commit: {commit}")
-                  print(f"AI Analysis: {result}")
+                  result = analyze_commit_message(anthropic, commit_hash, message)
                   
                   if "FAIL" in result:
-                      sys.exit(1)
+                      print(f"❌ Result: {result}")
+                      has_failures = True
+                  else:
+                      print(f"✅ Result: {result}")
+                  
+                  print_separator()
+              
+              if has_failures:
+                  print("❌ Some commits did not meet the quality standards!")
+                  sys.exit(1)
+              else:
+                  print("✅ All commits passed the quality check!")
 
           if __name__ == "__main__":
               main()
